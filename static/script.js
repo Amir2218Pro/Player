@@ -264,10 +264,32 @@ function loadVideo(videoInfo, playlistInfo = null, playlistIndex = -1) {
     currentPlaylistIndex = playlistIndex;
     
     console.log('Loading video:', videoInfo);
+    console.log('Video URL:', videoInfo.url);
     
+    // Clear any existing video source
+    videoPlayer.src = '';
+    
+    // Set new video source
     videoPlayer.src = videoInfo.url;
     videoTitle.textContent = videoInfo.name;
     videoPath.textContent = videoInfo.path;
+    
+    // Add error handling for video loading
+    videoPlayer.onerror = function(e) {
+        console.error('Video loading error:', e);
+        console.error('Failed to load:', videoInfo.url);
+        showNotification('Failed to load video: ' + videoInfo.name, 'error');
+    };
+    
+    videoPlayer.onloadstart = function() {
+        console.log('Video loading started');
+        showLoading(true);
+    };
+    
+    videoPlayer.oncanplay = function() {
+        console.log('Video can play');
+        showLoading(false);
+    };
     
     // Update active file in list
     updateActiveFile(videoInfo.path);
@@ -281,8 +303,6 @@ function loadVideo(videoInfo, playlistInfo = null, playlistIndex = -1) {
     if (permissions.can_use_subtitles) {
         loadSubtitles(videoInfo.path);
     }
-    
-    showLoading(true);
 }
 
 function updateActiveFile(filePath) {
@@ -378,6 +398,7 @@ async function loadFiles(path = '', sortBy = null, sortOrder = null) {
 function extractVideos(items, videoList) {
     items.forEach(item => {
         if (item.type === 'video' || item.type === 'audio') {
+            console.log('Adding video to list:', item.name, 'Path:', item.path);
             videoList.push(item);
         } else if (item.type === 'folder' && item.children) {
             extractVideos(item.children, videoList);
@@ -414,7 +435,7 @@ function renderFiles(items) {
         return `
             <div class="file-item ${item.thumbnail ? 'has-thumbnail' : ''}" 
                  data-path="${item.path}" 
-                 onclick="${item.type === 'folder' ? `navigateToFolder('${item.path}')` : `playFile('${item.path}')`}">
+                 onclick="${item.type === 'folder' ? `navigateToFolder('${item.path.replace(/'/g, "\\'")}')` : `playFile('${item.path.replace(/'/g, "\\'")}')`}">
                 <div class="file-icon ${item.type}">
                     ${thumbnail || `<i class="fas fa-${getFileIcon(item.type)}"></i>`}
                 </div>
@@ -428,12 +449,12 @@ function renderFiles(items) {
                 </div>
                 <div class="file-actions">
                     ${isVideo && permissions.can_download ? `
-                        <button class="file-action-btn" onclick="event.stopPropagation(); downloadFile('${item.path}')" title="Download">
+                        <button class="file-action-btn" onclick="event.stopPropagation(); downloadFile('${item.path.replace(/'/g, "\\'")}');" title="Download">
                             <i class="fas fa-download"></i>
                         </button>
                     ` : ''}
                     ${isVideo && permissions.can_use_playlists ? `
-                        <button class="file-action-btn" onclick="event.stopPropagation(); addToPlaylist('${item.path}')" title="Add to Playlist">
+                        <button class="file-action-btn" onclick="event.stopPropagation(); addToPlaylist('${item.path.replace(/'/g, "\\'")}');" title="Add to Playlist">
                             <i class="fas fa-plus"></i>
                         </button>
                     ` : ''}
@@ -445,6 +466,7 @@ function renderFiles(items) {
 
 function downloadFile(filePath) {
     if (permissions.can_download) {
+        console.log('Downloading file:', filePath);
         window.open(`/api/download/${filePath}`, '_blank');
     }
 }
@@ -596,7 +618,7 @@ function renderSearchResults(results) {
     }
     
     searchResultsDiv.innerHTML = results.map(item => `
-        <div class="search-result-item" onclick="${item.type === 'folder' ? `navigateToFolder('${item.path}')` : `playFile('${item.path}')`}">
+        <div class="search-result-item" onclick="${item.type === 'folder' ? `navigateToFolder('${item.path.replace(/'/g, "\\'")}')` : `playFile('${item.path.replace(/'/g, "\\'")}')`}">
             <div class="search-result-icon">
                 <i class="fas fa-${getFileIcon(item.type)}"></i>
             </div>
@@ -1022,6 +1044,7 @@ function playFile(path) {
     document.getElementById('searchResults').style.display = 'none';
     
     console.log('Attempting to play file:', path);
+    console.log('All videos:', allVideos);
     
     // Find video info
     const videoInfo = allVideos.find(v => v.path === path);
@@ -1031,6 +1054,7 @@ function playFile(path) {
         loadVideo(videoInfo);
     } else {
         console.error('Video info not found for path:', path);
+        console.error('Available paths:', allVideos.map(v => v.path));
         showNotification('Video not found', 'error');
     }
 }

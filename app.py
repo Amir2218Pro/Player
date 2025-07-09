@@ -409,7 +409,7 @@ def scan_directory_recursive(directory_path, base_path='', sort_by='name', sort_
                     'type': get_file_type(item),
                     'path': relative_path,
                     'full_path': item_path,
-                    'url': f'/static/videos/{relative_path.replace(os.sep, "/")}',
+                    'url': f'/static/videos/{relative_path.replace(os.sep, "/").replace(chr(92), "/")}',
                     'size': file_size,
                     'modified': file_modified,
                     'thumbnail': metadata[2] if metadata else None,
@@ -485,7 +485,7 @@ def search_files_recursive(directory_path, query, search_type='file', base_path=
                     'type': get_file_type(item),
                     'path': relative_path,
                     'full_path': item_path,
-                    'url': f'/static/videos/{relative_path.replace(os.sep, "/")}',
+                    'url': f'/static/videos/{relative_path.replace(os.sep, "/").replace(chr(92), "/")}',
                     'size': file_size,
                     'folder': os.path.dirname(relative_path) if os.path.dirname(relative_path) else 'Root',
                     'thumbnail': metadata[2] if metadata else None
@@ -1130,7 +1130,7 @@ def get_playlist_for_playing(playlist_id):
                 video_info = {
                     'name': os.path.basename(video_path),
                     'path': video_path,
-                    'url': f'/static/videos/{video_path.replace(os.sep, "/")}',
+                    'url': f'/static/videos/{video_path.replace(os.sep, "/").replace(chr(92), "/")}',
                     'size': file_size,
                     'thumbnail': metadata[2] if metadata else None,
                     'duration': metadata[3] if metadata else None,
@@ -1188,10 +1188,49 @@ def download_video(video_path):
         return jsonify({'error': 'Download access denied'}), 403
     
     try:
-        return send_from_directory(app.config['UPLOAD_FOLDER'], video_path, as_attachment=True)
+        # Normalize path separators
+        normalized_path = video_path.replace('/', os.sep).replace('\\', os.sep)
+        print(f"Download request for: {normalized_path}")
+        
+        # Check if file exists
+        full_path = os.path.join(app.config['UPLOAD_FOLDER'], normalized_path)
+        if not os.path.exists(full_path):
+            print(f"File not found: {full_path}")
+            return jsonify({'error': 'File not found'}), 404
+            
+        return send_from_directory(app.config['UPLOAD_FOLDER'], normalized_path, as_attachment=True)
     except FileNotFoundError:
+        print(f"FileNotFoundError for: {video_path}")
         return jsonify({'error': 'File not found'}), 404
+    except Exception as e:
+        print(f"Download error: {e}")
+        return jsonify({'error': 'Download failed'}), 500
 
+# Add route to serve video files directly
+@app.route('/static/videos/<path:filename>')
+def serve_video(filename):
+    """Serve video files with proper headers"""
+    try:
+        # Normalize path separators
+        normalized_path = filename.replace('/', os.sep).replace('\\', os.sep)
+        full_path = os.path.join(app.config['UPLOAD_FOLDER'], normalized_path)
+        
+        print(f"Serving video: {normalized_path}")
+        print(f"Full path: {full_path}")
+        print(f"File exists: {os.path.exists(full_path)}")
+        
+        if not os.path.exists(full_path):
+            print(f"Video file not found: {full_path}")
+            return "File not found", 404
+        
+        # Get file directory and name
+        directory = os.path.dirname(full_path)
+        file_name = os.path.basename(full_path)
+        
+        return send_from_directory(directory, file_name)
+    except Exception as e:
+        print(f"Error serving video {filename}: {e}")
+        return "Error serving file", 500
 if __name__ == '__main__':
     init_database()
     app.run(debug=True, host='0.0.0.0', port=5000)
