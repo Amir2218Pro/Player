@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XPlayer - Admin Panel</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <!-- Admin Header -->
+    <div class="admin-header">
+        <div class="admin-header-content">
+            <div class="admin-title">
+                <i class="fas fa-shield-alt"></i>
+                <div>
+                    <h1>Admin Panel</h1>
+                    <p>Welcome {{ username }}! Manage users and system settings</p>
+                </div>
+            </div>
+            <div class="admin-nav">
+                <a href="/" class="admin-nav-item">
+                    <i class="fas fa-arrow-left"></i>
+                    Back to Player
+                </a>
+                <button class="admin-nav-item" onclick="logout()">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </button>
+                <button class="theme-toggle" id="themeToggle">
+                    <i class="fas fa-sun" id="lightIcon"></i>
+                    <i class="fas fa-moon" id="darkIcon" style="display: none;"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Stats Cards -->
+        <div class="admin-stats">
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="totalUsers">0</h3>
+                    <p>Total Users</p>
+                </div>
+                <div class="stat-trend up" id="usersTrend" style="display: none;">
+                    <i class="fas fa-arrow-up"></i>
+                    <span>+0</span>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-user-check"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="activeUsers">0</h3>
+                    <p>Active Users</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-user-shield"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="totalAdmins">0</h3>
+                    <p>Admins</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-list"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="totalPlaylists">0</h3>
+                    <p>Playlists</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-video"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="totalVideos">0</h3>
+                    <p>Videos</p>
+                </div>
+            </div>
+            
+            <div class="stat-card">
+                <div class="stat-icon">
+                    <i class="fas fa-hdd"></i>
+                </div>
+                <div class="stat-content">
+                    <h3 id="storageUsed">0 GB</h3>
+                    <p>Storage Used</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Information -->
+        <div class="admin-section">
+            <div class="section-header">
+                <h2><i class="fas fa-server"></i> System Information</h2>
+                <div class="section-actions">
+                    <button class="btn btn-primary" onclick="loadSystemInfo()">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <div class="system-info-grid" id="systemInfoGrid">
+                <div class="loading-state">
+                    <div class="loading-spinner"></div>
+                    <p>Loading system information...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Create User Section -->
+        <div class="admin-section">
+            <div class="section-header">
+                <h2><i class="fas fa-user-plus"></i> Create New User</h2>
+            </div>
+            
+            <form id="createUserForm" class="create-user-form">
+                <!-- Form will be rendered by JavaScript -->
+            </form>
+        </div>
+
+        <!-- Users Management -->
+        <div class="admin-section">
+            <div class="section-header">
+                <h2><i class="fas fa-users"></i> User Management</h2>
+                <div class="section-actions">
+                    <div class="search-admin">
+                        <input type="text" id="userSearch" placeholder="Search users...">
+                        <i class="fas fa-search"></i>
+                    </div>
+                    <button class="btn btn-primary" onclick="refreshUsers()">
+                        <i class="fas fa-sync-alt"></i>
+                        Refresh
+                    </button>
+                </div>
+            </div>
+            
+            <div class="users-table-container">
+                <table class="users-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Role</th>
+                            <th>Status</th>
+                            <th>Permissions</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr>
+                            <td colspan="8" class="loading-cell">
+                                <div class="loading-spinner"></div>
+                                <span>Loading users...</span>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Permissions Modal -->
+    <div class="modal" id="permissionsModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> User Permissions</h3>
+                <button class="modal-close" onclick="hidePermissionsModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="permissionsForm">
+                    <input type="hidden" id="editUserId">
+                    
+                    <div class="form-group">
+                        <h4>Feature Access</h4>
+                        <div class="permission-group">
+                            <label class="permission-item">
+                                <input type="checkbox" id="canUsePlaylists">
+                                <span class="checkmark"></span>
+                                <div class="permission-info">
+                                    <strong>Playlists</strong>
+                                    <small>Create and manage playlists</small>
+                                </div>
+                            </label>
+                            
+                            <label class="permission-item">
+                                <input type="checkbox" id="canDownload">
+                                <span class="checkmark"></span>
+                                <div class="permission-info">
+                                    <strong>Download</strong>
+                                    <small>Download video files</small>
+                                </div>
+                            </label>
+                            
+                            <label class="permission-item">
+                                <input type="checkbox" id="canUseSubtitles">
+                                <span class="checkmark"></span>
+                                <div class="permission-info">
+                                    <strong>Subtitles</strong>
+                                    <small>Use subtitle features</small>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <h4>Time Access</h4>
+                        <div class="time-access-group">
+                            <div class="time-input-group">
+                                <label for="accessStartTime">Start Time</label>
+                                <input type="time" id="accessStartTime" value="00:00">
+                            </div>
+                            <div class="time-input-group">
+                                <label for="accessEndTime">End Time</label>
+                                <input type="time" id="accessEndTime" value="23:59">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="permission-item">
+                            <input type="checkbox" id="isActive">
+                            <span class="checkmark"></span>
+                            <div class="permission-info">
+                                <strong>Account Active</strong>
+                                <small>User can login and access the system</small>
+                            </div>
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hidePermissionsModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="savePermissions()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div class="modal" id="confirmModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-exclamation-triangle"></i> Confirm Action</h3>
+                <button class="modal-close" onclick="hideConfirmModal()">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p id="confirmMessage">Are you sure?</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="hideConfirmModal()">Cancel</button>
+                <button class="btn btn-primary" id="confirmButton">Confirm</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Theme management
+        const theme = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', theme);
+        updateThemeIcon();
+        
+        function updateThemeIcon() {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const lightIcon = document.getElementById('lightIcon');
+            const darkIcon = document.getElementById('darkIcon');
+            
+            if (currentTheme === 'dark') {
+                lightIcon.style.display = 'block';
+                darkIcon.style.display = 'none';
+            } else {
+                lightIcon.style.display = 'none';
+                darkIcon.style.display = 'block';
+            }
+        }
+        
+        document.getElementById('themeToggle').addEventListener('click', () => {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon();
+        });
+
+        // Admin functionality
+        let users = [];
+        let filteredUsers = [];
+        
+        // Initialize create user form
+        function initCreateUserForm() {
+            const form = document.getElementById('createUserForm');
+            form.innerHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px;">
+                    <div class="form-group">
+                        <label for="newUsername">Username *</label>
+                        <input type="text" id="newUsername" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newPassword">Password *</label>
+                        <input type="password" id="newPassword" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="newEmail">Email</label>
+                        <input type="email" id="newEmail">
+                    </div>
+                    <div class="form-group">
+                        <label class="permission-item">
+                            <input type="checkbox" id="newIsAdmin">
+                            <span class="checkmark"></span>
+                            <div class="permission-info">
+                                <strong>Admin User</strong>
+                                <small>Grant admin privileges</small>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="clearCreateUserForm()">Clear</button>
+                    <button type="submit" class="btn btn-primary">Create User</button>
+                </div>
+            `;
+            
+            form.addEventListener('submit', handleCreateUser);
+        }
+        
+
+        async function loadStats() {
+            try {
+                const response = await fetch('/api/admin/stats');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('totalUsers').textContent = data.total_users;
+                    document.getElementById('activeUsers').textContent = data.active_users;
+                    document.getElementById('totalAdmins').textContent = data.total_admins;
+                    document.getElementById('totalPlaylists').textContent = data.total_playlists;
+                    document.getElementById('totalVideos').textContent = data.total_videos;
+                    
+                    // Format storage size
+                    const storageGB = (data.storage_used / (1024 * 1024 * 1024)).toFixed(2);
+                    document.getElementById('storageUsed').textContent = storageGB + ' GB';
+                    
+                    // Show trend for recent users
+                    if (data.recent_users > 0) {
+                        const trendElement = document.getElementById('usersTrend');
+                        trendElement.querySelector('span').textContent = '+' + data.recent_users;
+                        trendElement.style.display = 'flex';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        async function handleCreateUser(e) {
+            e.preventDefault();
+            
+            const userData = {
+                username: document.getElementById('newUsername').value,
+                password: document.getElementById('newPassword').value,
+                email: document.getElementById('newEmail').value,
+                is_admin: document.getElementById('newIsAdmin').checked
+            };
+            
+            if (!userData.username || !userData.password) {
+                showNotification('Username and password are required', 'error');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/admin/create-user', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(userData)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showNotification('User created successfully', 'success');
+                    clearCreateUserForm();
+                    loadUsers();
+                    loadStats();
+                } else {
+                    showNotification(data.error || 'Failed to create user', 'error');
+                }
+            } catch (error) {
+                showNotification('Network error', 'error');
+            }
+        }
+        
+        function clearCreateUserForm() {
+            document.getElementById('newUsername').value = '';
+            document.getElementById('newPassword').value = '';
+            document.getElementById('newEmail').value = '';
+            document.getElementById('newIsAdmin').checked = false;
+        }
+
+        async function loadSystemInfo() {
+            try {
+                const response = await fetch('/api/admin/system-info');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    renderSystemInfo(data.system_info);
+                } else {
+                    document.getElementById('systemInfoGrid').innerHTML = `
+                        <div class="empty-cell">System monitoring not available</div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading system info:', error);
+                document.getElementById('systemInfoGrid').innerHTML = `
+                    <div class="empty-cell">Failed to load system information</div>
+                `;
+            }
+        }
+        
+        function renderSystemInfo(info) {
+            const grid = document.getElementById('systemInfoGrid');
+            
+            const memoryPercent = info.memory.percent;
+            const diskPercent = info.disk.percent;
+            
+            grid.innerHTML = `
+                <div class="system-info-card">
+                    <h4><i class="fas fa-desktop"></i> System</h4>
+                    <div class="system-metric">
+                        <span class="metric-label">Platform</span>
+                        <span class="metric-value">${info.platform}</span>
+                    </div>
+                    <div class="system-metric">
+                        <span class="metric-label">Python</span>
+                        <span class="metric-value">${info.python_version}</span>
+                    </div>
+                    <div class="system-metric">
+                        <span class="metric-label">CPU Cores</span>
+                        <span class="metric-value">${info.cpu_count}</span>
+                    </div>
+                </div>
+                
+                <div class="system-info-card">
+                    <h4><i class="fas fa-microchip"></i> Performance</h4>
+                    <div class="system-metric">
+                        <span class="metric-label">CPU Usage</span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="progress-bar-small">
+                                <div class="progress-fill-small ${info.cpu_percent > 80 ? 'danger' : info.cpu_percent > 60 ? 'warning' : ''}" 
+                                     style="width: ${info.cpu_percent}%"></div>
+                            </div>
+                            <span class="metric-value">${info.cpu_percent}%</span>
+                        </div>
+                    </div>
+                    <div class="system-metric">
+                        <span class="metric-label">Memory</span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="progress-bar-small">
+                                <div class="progress-fill-small ${memoryPercent > 80 ? 'danger' : memoryPercent > 60 ? 'warning' : ''}" 
+                                     style="width: ${memoryPercent}%"></div>
+                            </div>
+                            <span class="metric-value">${memoryPercent}%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="system-info-card">
+                    <h4><i class="fas fa-hdd"></i> Storage</h4>
+                    <div class="system-metric">
+                        <span class="metric-label">Used</span>
+                        <span class="metric-value">${(info.disk.used / (1024**3)).toFixed(1)} GB</span>
+                    </div>
+                    <div class="system-metric">
+                        <span class="metric-label">Free</span>
+                        <span class="metric-value">${(info.disk.free / (1024**3)).toFixed(1)} GB</span>
+                    </div>
+                    <div class="system-metric">
+                        <span class="metric-label">Usage</span>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <div class="progress-bar-small">
+                                <div class="progress-fill-small ${diskPercent > 80 ? 'danger' : diskPercent > 60 ? 'warning' : ''}" 
+                                     style="width: ${diskPercent}%"></div>
+                            </div>
+                            <span class="metric-value">${diskPercent}%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="system-info-card">
+                    <h4><i class="fas fa-memory"></i> Memory Details</h4>
+                    <div class="system-metric">
+                        <span class="metric-label">Total</span>
+                        <span class="metric-value">${(info.memory.total / (1024**3)).toFixed(1)} GB</span>
+                    </div>
+                    <div class="system-metric">
+                        <span class="metric-label">Available</span>
+                        <span class="metric-value">${(info.memory.available / (1024**3)).toFixed(1)} GB</span>
+                    </div>
+                </div>
+            `;
+        }
+        async function loadUsers() {
+            try {
+                const response = await fetch('/api/admin/users');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    users = data.users;
+                    filteredUsers = users;
+                    renderUsers();
+                } else {
+                    showNotification(data.error || 'Failed to load users', 'error');
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+                showNotification('Network error', 'error');
+            }
+        }
+
+        function renderUsers() {
+            const tbody = document.getElementById('usersTableBody');
+            
+            if (filteredUsers.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="empty-cell">No users found</td>
+                    </tr>
+                `;
+                return;
+            }
+
+            tbody.innerHTML = filteredUsers.map(user => `
+                <tr>
+                    <td>${user.id}</td>
+                    <td>
+                        <div class="user-info">
+                            <i class="fas fa-user"></i>
+                            ${user.username}
+                        </div>
+                    </td>
+                    <td>${user.email || 'N/A'}</td>
+                    <td>
+                        <span class="role-badge ${user.is_admin ? 'admin' : 'user'}">
+                            <i class="fas fa-${user.is_admin ? 'shield-alt' : 'user'}"></i>
+                            ${user.is_admin ? 'Admin' : 'User'}
+                        </span>
+                    </td>
+                   <td>
+                       <span class="status-badge ${user.is_active ? 'active' : 'inactive'}">
+                           <i class="fas fa-${user.is_active ? 'check-circle' : 'times-circle'}"></i>
+                           ${user.is_active ? 'Active' : 'Inactive'}
+                       </span>
+                   </td>
+                   <td>
+                       <div class="permission-badges">
+                           ${user.can_use_playlists ? '<span class="perm-badge">📋</span>' : ''}
+                           ${user.can_download ? '<span class="perm-badge">⬇️</span>' : ''}
+                           ${user.can_use_subtitles ? '<span class="perm-badge">📝</span>' : ''}
+                       </div>
+                       <small class="time-access">${user.access_start_time} - ${user.access_end_time}</small>
+                   </td>
+                    <td>${formatDate(user.created_at)}</td>
+                    <td>
+                        <div class="action-buttons">
+                           <button class="btn-action edit-permissions" 
+                                   onclick="editPermissions(${user.id})"
+                                   title="Edit Permissions">
+                               <i class="fas fa-key"></i>
+                           </button>
+                            <button class="btn-action toggle-admin" 
+                                    onclick="toggleAdminStatus(${user.id}, '${user.username}', ${user.is_admin})"
+                                    title="${user.is_admin ? 'Remove Admin' : 'Make Admin'}">
+                                <i class="fas fa-${user.is_admin ? 'user-minus' : 'user-plus'}"></i>
+                            </button>
+                            <button class="btn-action delete" 
+                                    onclick="deleteUser(${user.id}, '${user.username}')"
+                                    title="Delete User">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // User search functionality
+        document.getElementById('userSearch').addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            
+            if (query === '') {
+                filteredUsers = users;
+            } else {
+                filteredUsers = users.filter(user => 
+                    user.username.toLowerCase().includes(query) ||
+                    (user.email && user.email.toLowerCase().includes(query))
+                );
+            }
+            
+            renderUsers();
+        });
+        function editPermissions(userId) {
+            const user = users.find(u => u.id === userId);
+            if (!user) return;
+            
+            // Fill form with current values
+            document.getElementById('editUserId').value = userId;
+            document.getElementById('canUsePlaylists').checked = user.can_use_playlists;
+            document.getElementById('canDownload').checked = user.can_download;
+            document.getElementById('canUseSubtitles').checked = user.can_use_subtitles;
+            document.getElementById('accessStartTime').value = user.access_start_time;
+            document.getElementById('accessEndTime').value = user.access_end_time;
+            document.getElementById('isActive').checked = user.is_active;
+            
+            // Show modal
+            document.getElementById('permissionsModal').style.display = 'flex';
+        }
+        
+        function hidePermissionsModal() {
+            document.getElementById('permissionsModal').style.display = 'none';
+        }
+        
+        async function savePermissions() {
+            const userId = document.getElementById('editUserId').value;
+            const permissions = {
+                can_use_playlists: document.getElementById('canUsePlaylists').checked,
+                can_download: document.getElementById('canDownload').checked,
+                can_use_subtitles: document.getElementById('canUseSubtitles').checked,
+                access_start_time: document.getElementById('accessStartTime').value,
+                access_end_time: document.getElementById('accessEndTime').value,
+                is_active: document.getElementById('isActive').checked
+            };
+            
+            try {
+                const response = await fetch(`/api/admin/users/${userId}/permissions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(permissions)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showNotification('Permissions updated successfully', 'success');
+                    hidePermissionsModal();
+                    loadUsers();
+                } else {
+                    showNotification(data.error || 'Failed to update permissions', 'error');
+                }
+            } catch (error) {
+                showNotification('Network error', 'error');
+            }
+        }
+
+        async function deleteUser(userId, username) {
+            showConfirmModal(
+                `Are you sure you want to delete user "${username}"? This action cannot be undone.`,
+                async () => {
+                    try {
+                        const response = await fetch(`/api/admin/users/${userId}`, {
+                            method: 'DELETE'
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            showNotification('User deleted successfully', 'success');
+                            loadUsers();
+                            loadStats();
+                        } else {
+                            showNotification(data.error || 'Failed to delete user', 'error');
+                        }
+                    } catch (error) {
+                        showNotification('Network error', 'error');
+                    }
+                    hideConfirmModal();
+                }
+            );
+        }
+
+        async function toggleAdminStatus(userId, username, isCurrentlyAdmin) {
+            const action = isCurrentlyAdmin ? 'remove admin privileges from' : 'grant admin privileges to';
+            
+            showConfirmModal(
+                `Are you sure you want to ${action} user "${username}"?`,
+                async () => {
+                    try {
+                        const response = await fetch(`/api/admin/users/${userId}/toggle-admin`, {
+                            method: 'POST'
+                        });
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            showNotification(data.message, 'success');
+                            loadUsers();
+                            loadStats();
+                        } else {
+                            showNotification(data.error || 'Failed to update user', 'error');
+                        }
+                    } catch (error) {
+                        showNotification('Network error', 'error');
+                    }
+                    hideConfirmModal();
+                }
+            );
+        }
+
+        function refreshUsers() {
+            loadUsers();
+            loadStats();
+            loadSystemInfo();
+        }
+
+        function showConfirmModal(message, onConfirm) {
+            document.getElementById('confirmMessage').textContent = message;
+            document.getElementById('confirmButton').onclick = onConfirm;
+            document.getElementById('confirmModal').style.display = 'flex';
+        }
+
+        function hideConfirmModal() {
+            document.getElementById('confirmModal').style.display = 'none';
+        }
+
+        async function logout() {
+            try {
+                const response = await fetch('/api/logout', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    window.location.href = '/login';
+                }
+            } catch (error) {
+                console.error('Logout error:', error);
+                window.location.href = '/login';
+            }
+        }
+
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
+
+        function showNotification(message, type = 'info') {
+            const notification = document.createElement('div');
+            notification.className = `notification ${type}`;
+            notification.textContent = message;
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 4000);
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadUsers();
+            loadSystemInfo();
+            initCreateUserForm();
+        });
+    </script>
+</body>
+</html>

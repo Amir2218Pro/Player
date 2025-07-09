@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Video Player</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="header-content">
+                <div class="header-left">
+                    <h1><i class="fas fa-play-circle"></i> Advanced Video Player</h1>
+                    <p>Welcome back, {{ username }}! Manage and play your favorite videos</p>
+                </div>
+                <div class="header-right">
+                    {% if is_admin %}
+                    <a href="/admin" class="control-btn playlist-btn" title="Admin Panel">
+                        <i class="fas fa-shield-alt"></i>
+                        <span>Admin</span>
+                    </a>
+                    {% endif %}
+                    <button class="control-btn playlist-btn" id="playlistBtn" title="Playlists" style="display: {% if permissions.can_use_playlists %}flex{% else %}none{% endif %};">
+                        <i class="fas fa-list"></i>
+                        <span>Playlists</span>
+                    </button>
+                    <button class="control-btn logout-btn" id="logoutBtn" title="Logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </button>
+                    <button class="theme-toggle" id="themeToggle">
+                        <i class="fas fa-sun" id="lightIcon"></i>
+                        <i class="fas fa-moon" id="darkIcon" style="display: none;"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Video Player Section -->
+            <div class="video-section">
+                <div class="video-container" id="videoContainer">
+                    <video 
+                        id="videoPlayer" 
+                        class="video-player"
+                        preload="metadata"
+                    >
+                        Your browser does not support the video tag.
+                    </video>
+                    
+                    <!-- Custom Video Controls -->
+                    <div class="video-controls" id="videoControls">
+                        <!-- Progress Bar -->
+                        <div class="progress-container">
+                            <div class="progress-bar" id="progressBar">
+                                <div class="progress-filled" id="progressFilled"></div>
+                                <div class="progress-handle" id="progressHandle"></div>
+                            </div>
+                        </div>
+                        
+                        <!-- Control Buttons -->
+                        <div class="controls-bottom">
+                            <div class="controls-left">
+                                <button class="control-btn play-pause-btn" id="playPauseBtn">
+                                    <i class="fas fa-play" id="playIcon"></i>
+                                    <i class="fas fa-pause" id="pauseIcon" style="display: none;"></i>
+                                </button>
+                                
+                                <button class="control-btn" id="prevBtn">
+                                    <i class="fas fa-step-backward"></i>
+                                </button>
+                                
+                                <button class="control-btn" id="nextBtn">
+                                    <i class="fas fa-step-forward"></i>
+                                </button>
+                                
+                                <div class="volume-container">
+                                    <button class="control-btn volume-btn" id="volumeBtn">
+                                        <i class="fas fa-volume-up" id="volumeIcon"></i>
+                                    </button>
+                                    <div class="volume-slider-container" id="volumeSliderContainer">
+                                        <input type="range" class="volume-slider" id="volumeSlider" min="0" max="1" step="0.1" value="1">
+                                    </div>
+                                </div>
+                                
+                                <div class="time-display">
+                                    <span id="currentTime">0:00</span>
+                                    <span class="time-separator">/</span>
+                                    <span id="duration">0:00</span>
+                                </div>
+                            </div>
+                            
+                            <div class="controls-right">
+                                <div class="speed-container">
+                                    <button class="control-btn speed-btn" id="speedBtn">
+                                        <span id="speedText">1x</span>
+                                    </button>
+                                    <div class="speed-menu" id="speedMenu">
+                                        <div class="speed-option" data-speed="0.25">0.25x</div>
+                                        <div class="speed-option" data-speed="0.5">0.5x</div>
+                                        <div class="speed-option" data-speed="0.75">0.75x</div>
+                                        <div class="speed-option active" data-speed="1">Normal</div>
+                                        <div class="speed-option" data-speed="1.25">1.25x</div>
+                                        <div class="speed-option" data-speed="1.5">1.5x</div>
+                                        <div class="speed-option" data-speed="1.75">1.75x</div>
+                                        <div class="speed-option" data-speed="2">2x</div>
+                                    </div>
+                                </div>
+                                
+                                <button class="control-btn" id="fullscreenBtn">
+                                    <i class="fas fa-expand" id="fullscreenIcon"></i>
+                                    <i class="fas fa-compress" id="exitFullscreenIcon" style="display: none;"></i>
+                                </button>
+                                
+                                <div class="quality-container">
+                                    <button class="control-btn quality-btn" id="qualityBtn">
+                                        <span id="qualityText">Auto</span>
+                                    </button>
+                                    <div class="quality-menu" id="qualityMenu">
+                                        <div class="quality-option active" data-quality="auto">Auto</div>
+                                        <div class="quality-option" data-quality="1080p">1080p</div>
+                                        <div class="quality-option" data-quality="720p">720p</div>
+                                        <div class="quality-option" data-quality="480p">480p</div>
+                                        <div class="quality-option" data-quality="360p">360p</div>
+                                    </div>
+                                </div>
+                                
+                                <div class="subtitle-container" style="display: {% if permissions.can_use_subtitles %}block{% else %}none{% endif %};">
+                                    <button class="control-btn subtitle-btn" id="subtitleBtn">
+                                        <i class="fas fa-closed-captioning"></i>
+                                    </button>
+                                    <div class="subtitle-menu" id="subtitleMenu">
+                                        <div class="subtitle-option active" data-subtitle="off">Off</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Video Overlay -->
+                    <div class="video-overlay" id="videoOverlay">
+                        <div class="play-overlay" id="playOverlay">
+                            <i class="fas fa-play"></i>
+                        </div>
+                        <div class="loading-overlay" id="loadingOverlay">
+                            <div class="loading-spinner"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Video Info -->
+                <div class="video-info">
+                    <h2 class="video-title" id="videoTitle">No video selected</h2>
+                    <div class="video-meta">
+                        <div class="video-details">
+                            <span class="video-views" id="videoViews">0 views</span>
+                            <span class="video-path" id="videoPath"></span>
+                        </div>
+                        <div class="video-actions">
+                            <button class="action-btn like-btn" id="likeBtn">
+                                <i class="far fa-thumbs-up"></i>
+                                <span>Like</span>
+                            </button>
+                            <button class="action-btn share-btn" id="shareBtn">
+                                <i class="fas fa-share"></i>
+                                <span>Share</span>
+                            </button>
+                            <button class="action-btn download-btn" id="downloadBtn">
+                                <i class="fas fa-download"></i>
+                                <span>Download</span>
+                            </button>
+                            <button class="action-btn playlist-add-btn" id="playlistAddBtn" style="display: {% if permissions.can_use_playlists %}flex{% else %}none{% endif %};">
+                                <i class="fas fa-plus"></i>
+                                <span>Add to Playlist</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <!-- File Browser -->
+                <div class="file-browser-section">
+                    <div class="file-browser-header">
+                        <h3><i class="fas fa-folder-open"></i> File Browser</h3>
+                        <div class="browser-controls">
+                            <button class="control-btn view-toggle" id="viewToggle" title="Toggle View">
+                                <i class="fas fa-th-large" id="gridIcon"></i>
+                                <i class="fas fa-list" id="listIcon" style="display: none;"></i>
+                            </button>
+                            <button class="control-btn" id="refreshBtn" title="Refresh">
+                                <i class="fas fa-sync-alt"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <!-- Search Section -->
+                    <div class="search-container">
+                        <div class="search-header">
+                            <h4><i class="fas fa-search"></i> Search</h4>
+                            <div class="search-type-toggle">
+                                <button class="search-type-btn active" id="searchTypeFile">Files</button>
+                                <button class="search-type-btn" id="searchTypeFolder">Folders</button>
+                            </div>
+                        </div>
+                        <div class="search-box">
+                            <i class="fas fa-search search-icon"></i>
+                            <input type="text" id="searchInput" placeholder="Search by filename..." autocomplete="off">
+                            <button class="search-clear" id="searchClear" style="display: none;">
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <div class="search-results" id="searchResults" style="display: none;"></div>
+                    </div>
+                    
+                    <!-- Breadcrumb -->
+                    <div class="breadcrumb" id="breadcrumb">
+                        <span class="breadcrumb-item active" data-path="">
+                            <i class="fas fa-home"></i> Home
+                        </span>
+                    </div>
+                    
+                    <!-- File List -->
+                    <div class="file-list" id="fileList">
+                        <div class="loading-state">
+                            <div class="loading-spinner"></div>
+                            <p>Loading...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Playlist Viewer will be inserted here dynamically -->
+            </div>
+        </div>
+        
+        <!-- Playlist Modal -->
+        <div class="modal" id="playlistModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-list"></i> Playlists</h3>
+                    <button class="modal-close" id="playlistModalClose">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="playlist-actions">
+                        <button class="btn btn-primary" id="createPlaylistBtn">
+                            <i class="fas fa-plus"></i>
+                            Create New Playlist
+                        </button>
+                    </div>
+                    <div class="playlist-list" id="playlistList">
+                        <div class="loading-state">
+                            <div class="loading-spinner"></div>
+                            <p>Loading playlists...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Add to Playlist Modal -->
+        <div class="modal" id="addToPlaylistModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-plus"></i> Add to Playlist</h3>
+                    <button class="modal-close" id="addToPlaylistModalClose">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="playlist-selection" id="playlistSelection">
+                        <div class="loading-state">
+                            <div class="loading-spinner"></div>
+                            <p>Loading playlists...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Create Playlist Modal -->
+        <div class="modal" id="createPlaylistModal" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-plus"></i> Create Playlist</h3>
+                    <button class="modal-close" id="createPlaylistModalClose">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <form id="createPlaylistForm">
+                        <div class="form-group">
+                            <label for="playlistName">Playlist Name</label>
+                            <input type="text" id="playlistName" name="name" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="playlistDescription">Description (Optional)</label>
+                            <textarea id="playlistDescription" name="description" rows="3"></textarea>
+                        </div>
+                        <div class="form-actions">
+                            <button type="button" class="btn btn-secondary" id="cancelCreatePlaylist">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Create Playlist</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Keyboard Shortcuts -->
+        <div class="shortcuts-section">
+            <h3><i class="fas fa-keyboard"></i> Keyboard Shortcuts</h3>
+            <div class="shortcuts-grid">
+                <div class="shortcut-item">
+                    <span>Play/Pause</span>
+                    <kbd>Space</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Seek backward 10s</span>
+                    <kbd>←</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Seek forward 10s</span>
+                    <kbd>→</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Volume up</span>
+                    <kbd>↑</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Volume down</span>
+                    <kbd>↓</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Fullscreen</span>
+                    <kbd>F</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Next video</span>
+                    <kbd>N</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Previous video</span>
+                    <kbd>P</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Toggle theme</span>
+                    <kbd>T</kbd>
+                </div>
+                <div class="shortcut-item">
+                    <span>Search</span>
+                    <kbd>Ctrl+F</kbd>
+                    <div class="shortcut-item" style="display: {% if permissions.can_use_subtitles %}flex{% else %}none{% endif %};">
+                <div class="shortcut-item">
+                    <span>Toggle subtitles</span>
+                    <kbd>C</kbd>
+                    <div class="shortcut-item" style="display: {% if permissions.can_use_playlists %}flex{% else %}none{% endif %};">
+                <div class="shortcut-item">
+                    <span>Open playlists</span>
+                    <kbd>L</kbd>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="globalLoading" class="global-loading">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p>Loading...</p>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // Pass user permissions to JavaScript
+        window.userPermissions = {
+            can_use_playlists: {{ permissions.can_use_playlists|tojson }},
+            can_download: {{ permissions.can_download|tojson }},
+            can_use_subtitles: {{ permissions.can_use_subtitles|tojson }}
+        };
+    </script>
+</body>
+</html>
