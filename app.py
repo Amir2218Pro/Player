@@ -23,7 +23,19 @@ UPLOAD_FOLDER = 'static/videos'
 THUMBNAILS_FOLDER = 'static/thumbnails'
 SUBTITLES_FOLDER = 'static/subtitles'
 DATABASE_FILE = 'xplayer.db'
-ALLOWED_EXTENSIONS = {'mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', '3gp', 'mp3', 'wav', 'aac'}
+
+# Extended list of supported media formats
+ALLOWED_EXTENSIONS = {
+    # Video formats
+    'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'ogg', 'ogv',
+    'm4v', 'mpg', 'mpeg', 'mp2', 'mpe', 'mpv', 'm2v', '3gp', '3g2',
+    'mxf', 'roq', 'nsv', 'f4v', 'f4p', 'f4a', 'f4b', 'asf', 'rm',
+    'rmvb', 'vob', 'ts', 'mts', 'm2ts', 'divx', 'xvid',
+    # Audio formats
+    'mp3', 'wav', 'flac', 'aac', 'oga', 'wma', 'm4a', 'opus',
+    'aiff', 'au', 'ra', 'amr', 'ac3', 'dts', 'ape', 'mka'
+}
+
 SUBTITLE_EXTENSIONS = {'srt', 'vtt', 'ass', 'ssa'}
 MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB max file size
 
@@ -142,18 +154,21 @@ def check_time_access(user_id):
         return True  # If time parsing fails, allow access
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    """Check if file is allowed (video or audio)"""
+    if not filename or '.' not in filename:
+        return False
+    
+    extension = filename.rsplit('.', 1)[1].lower()
+    return extension in ALLOWED_EXTENSIONS
 
 def allowed_subtitle(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in SUBTITLE_EXTENSIONS
 
 def is_video_file(filename):
-    video_extensions = {'mp4', 'webm', 'ogg', 'avi', 'mov', 'wmv', 'flv', 'mkv', '3gp'}
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in video_extensions
+    return is_video_file_detailed(filename)
 
 def is_audio_file(filename):
-    audio_extensions = {'mp3', 'wav', 'aac', 'ogg'}
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in audio_extensions
+    return is_audio_file_detailed(filename)
 
 def get_file_type(filename):
     if is_video_file(filename):
@@ -166,60 +181,84 @@ def get_file_type(filename):
 def generate_thumbnail(video_path, thumbnail_path):
     """Generate thumbnail for video at 55 seconds using ffmpeg (if available)"""
     try:
-        # Full path to video file
         full_video_path = os.path.join(UPLOAD_FOLDER, video_path)
         
         if not os.path.exists(full_video_path):
+            print(f"Video file not found: {full_video_path}")
             return create_placeholder_thumbnail(thumbnail_path)
         
-        # Create thumbnails directory if it doesn't exist
         thumbnail_dir = os.path.dirname(thumbnail_path)
         os.makedirs(thumbnail_dir, exist_ok=True)
         
-        # Try to generate thumbnail at 55 seconds using ffmpeg
+        print(f"Generating thumbnail for: {full_video_path}")
+        
         try:
-            # First, get video duration to check if 55 seconds exists
+            # Get video duration first
             duration_cmd = [
                 'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
                 '-of', 'csv=p=0', full_video_path
             ]
             
-            duration_result = subprocess.run(duration_cmd, capture_output=True, text=True, timeout=10)
+            duration_result = subprocess.run(duration_cmd, capture_output=True, text=True, timeout=15)
             
             if duration_result.returncode == 0:
                 try:
                     duration = float(duration_result.stdout.strip())
-                    # Choose appropriate time for thumbnail
+                    print(f"Video duration: {duration} seconds")
+                    
+                    # Choose appropriate time for thumbnail (prefer 55 seconds)
                     if duration > 55:
                         seek_time = '00:00:55'
                     elif duration > 10:
                         seek_time = '00:00:10'
+                    elif duration > 5:
+                        seek_time = '00:00:05'
                     else:
                         seek_time = '00:00:01'
-                except:
+                except ValueError:
+                    print("Could not parse duration, using default")
                     seek_time = '00:00:10'
             else:
+                print("Could not get duration, using default seek time")
                 seek_time = '00:00:10'
             
-            # FFmpeg command to extract frame
+            print(f"Using seek time: {seek_time}")
+            
+            # FFmpeg command to extract frame at specified time
             cmd = [
                 'ffmpeg', '-i', full_video_path,
                 '-ss', seek_time,
                 '-vframes', '1',
                 '-q:v', '2',
-                '-vf', 'scale=320:180',  # Standard thumbnail size
+                '-vf', 'scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2',
                 '-y',
                 thumbnail_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            print(f"Running ffmpeg command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=45)
             
             if result.returncode == 0 and os.path.exists(thumbnail_path):
+                print(f"Thumbnail generated successfully: {thumbnail_path}")
                 return f"/static/thumbnails/{os.path.basename(thumbnail_path)}"
             else:
+                print(f"FFmpeg failed with return code: {result.returncode}")
+                print(f"FFmpeg stderr: {result.stderr}")
+                
+                # Try with a different seek time if first attempt failed
+                if seek_time != '00:00:01':
+                    print("Retrying with 1 second seek time")
+                    cmd[3] = '00:00:01'
+                    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                    
+                    if result.returncode == 0 and os.path.exists(thumbnail_path):
+                        print("Thumbnail generated on retry")
+                        return f"/static/thumbnails/{os.path.basename(thumbnail_path)}"
+                
                 return create_placeholder_thumbnail(thumbnail_path)
                 
-        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError):
+        except (subprocess.TimeoutExpired, FileNotFoundError, subprocess.CalledProcessError) as e:
+            print(f"FFmpeg error: {e}")
             return create_placeholder_thumbnail(thumbnail_path)
             
     except Exception as e:
@@ -228,6 +267,7 @@ def generate_thumbnail(video_path, thumbnail_path):
 
 def create_placeholder_thumbnail(thumbnail_path):
     """Create a simple placeholder thumbnail"""
+    print("Creating placeholder thumbnail")
     try:
         # Create a simple SVG placeholder
         svg_content = '''
@@ -246,6 +286,34 @@ def create_placeholder_thumbnail(thumbnail_path):
         print(f"Error creating placeholder: {e}")
         return None
 
+def is_video_file_detailed(filename):
+    """More comprehensive video file detection"""
+    video_extensions = {
+        'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'ogg', 'ogv',
+        'm4v', 'mpg', 'mpeg', 'mp2', 'mpe', 'mpv', 'm2v', '3gp', '3g2',
+        'mxf', 'roq', 'nsv', 'f4v', 'f4p', 'f4a', 'f4b', 'asf', 'rm',
+        'rmvb', 'vob', 'ts', 'mts', 'm2ts', 'divx', 'xvid'
+    }
+    
+    if not filename or '.' not in filename:
+        return False
+        
+    extension = filename.rsplit('.', 1)[1].lower()
+    return extension in video_extensions
+
+def is_audio_file_detailed(filename):
+    """More comprehensive audio file detection"""
+    audio_extensions = {
+        'mp3', 'wav', 'flac', 'aac', 'ogg', 'oga', 'wma', 'm4a', 'opus',
+        'aiff', 'au', 'ra', 'amr', 'ac3', 'dts', 'ape', 'mka'
+    }
+    
+    if not filename or '.' not in filename:
+        return False
+        
+    extension = filename.rsplit('.', 1)[1].lower()
+    return extension in audio_extensions
+
 def get_video_duration(file_path):
     """Get video duration using ffprobe"""
     try:
@@ -254,10 +322,13 @@ def get_video_duration(file_path):
             'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
             '-of', 'csv=p=0', full_path
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
         if result.returncode == 0:
-            return float(result.stdout.strip())
-    except:
+            duration = float(result.stdout.strip())
+            print(f"Duration for {file_path}: {duration} seconds")
+            return duration
+    except Exception as e:
+        print(f"Error getting duration for {file_path}: {e}")
         pass
     return None
 
@@ -274,6 +345,8 @@ def get_video_metadata(file_path):
         thumbnail_filename = hashlib.md5(file_path.encode()).hexdigest() + '.jpg'
         thumbnail_path = os.path.join(THUMBNAILS_FOLDER, thumbnail_filename)
         
+        print(f"Processing metadata for: {file_path}")
+        
         # Generate thumbnail
         thumbnail_url = generate_thumbnail(file_path, thumbnail_path)
         
@@ -285,6 +358,8 @@ def get_video_metadata(file_path):
         except:
             file_size = 0
             duration = None
+        
+        print(f"Metadata - Size: {file_size}, Duration: {duration}, Thumbnail: {thumbnail_url}")
         
         # Insert metadata
         cursor.execute('''
@@ -324,6 +399,7 @@ def scan_directory_recursive(directory_path, base_path='', sort_by='name', sort_
                 items.append(folder_info)
             elif allowed_file(item):
                 # It's a media file
+                print(f"Found media file: {item}")
                 file_size = os.path.getsize(item_path)
                 file_modified = os.path.getmtime(item_path)
                 metadata = get_video_metadata(relative_path)
@@ -340,9 +416,15 @@ def scan_directory_recursive(directory_path, base_path='', sort_by='name', sort_
                     'duration': metadata[3] if metadata else None,
                     'resolution': metadata[4] if metadata else None
                 }
+                print(f"Added file info: {file_info['name']} - Type: {file_info['type']}")
                 items.append(file_info)
+            else:
+                print(f"File not allowed: {item}")
     except PermissionError:
+        print(f"Permission denied for directory: {directory_path}")
         pass
+    except Exception as e:
+        print(f"Error scanning directory {directory_path}: {e}")
     
     # Sort items
     return sort_items(items, sort_by, sort_order)

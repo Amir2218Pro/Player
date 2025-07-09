@@ -263,6 +263,8 @@ function loadVideo(videoInfo, playlistInfo = null, playlistIndex = -1) {
     currentPlaylist = playlistInfo;
     currentPlaylistIndex = playlistIndex;
     
+    console.log('Loading video:', videoInfo);
+    
     videoPlayer.src = videoInfo.url;
     videoTitle.textContent = videoInfo.name;
     videoPath.textContent = videoInfo.path;
@@ -339,6 +341,7 @@ function downloadCurrentVideo() {
 async function loadFiles(path = '', sortBy = null, sortOrder = null) {
     try {
         showLoading(true);
+        console.log('Loading files from path:', path);
         
         // Use current sort if not specified
         if (sortBy) currentSort.by = sortBy;
@@ -355,6 +358,7 @@ async function loadFiles(path = '', sortBy = null, sortOrder = null) {
         
         if (response.ok) {
             currentPath = data.current_path;
+            console.log('Loaded items:', data.items);
             renderFiles(data.items);
             updateBreadcrumb(data.current_path, data.parent_path);
             
@@ -382,6 +386,8 @@ function extractVideos(items, videoList) {
 }
 
 function renderFiles(items) {
+    console.log('Rendering files:', items);
+    
     if (items.length === 0) {
         fileList.innerHTML = `
             <div class="empty-state">
@@ -394,9 +400,16 @@ function renderFiles(items) {
     
     fileList.innerHTML = items.map(item => {
         const isVideo = item.type === 'video' || item.type === 'audio';
-        const thumbnail = item.thumbnail ? 
-            `<img src="${item.thumbnail}" class="file-thumbnail" alt="Thumbnail">` : 
-            '';
+        
+        let thumbnail = '';
+        if (item.thumbnail) {
+            // Handle both data URLs and regular URLs
+            if (item.thumbnail.startsWith('data:') || item.thumbnail.startsWith('/static/')) {
+                thumbnail = `<img src="${item.thumbnail}" class="file-thumbnail" alt="Thumbnail" onerror="this.style.display='none'">`;
+            } else {
+                thumbnail = `<img src="${item.thumbnail}" class="file-thumbnail" alt="Thumbnail" onerror="this.style.display='none'">`;
+            }
+        }
         
         return `
             <div class="file-item ${item.thumbnail ? 'has-thumbnail' : ''}" 
@@ -1008,10 +1021,17 @@ function navigateToFolder(path) {
 function playFile(path) {
     document.getElementById('searchResults').style.display = 'none';
     
+    console.log('Attempting to play file:', path);
+    
     // Find video info
     const videoInfo = allVideos.find(v => v.path === path);
+    console.log('Found video info:', videoInfo);
+    
     if (videoInfo) {
         loadVideo(videoInfo);
+    } else {
+        console.error('Video info not found for path:', path);
+        showNotification('Video not found', 'error');
     }
 }
 
