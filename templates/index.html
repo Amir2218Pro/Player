@@ -355,15 +355,13 @@
                 <div class="shortcut-item">
                     <span>Search</span>
                     <kbd>Ctrl+F</kbd>
-                    <div class="shortcut-item" style="display: {% if permissions.can_use_subtitles %}flex{% else %}none{% endif %};">
-                <div class="shortcut-item">
-                    <span>Toggle subtitles</span>
-                    <kbd>C</kbd>
-                    <div class="shortcut-item" style="display: {% if permissions.can_use_playlists %}flex{% else %}none{% endif %};">
+                </div>
+                {% if permissions.can_use_playlists %}
                 <div class="shortcut-item">
                     <span>Open playlists</span>
                     <kbd>L</kbd>
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>

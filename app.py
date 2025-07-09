@@ -261,6 +261,43 @@ def get_video_duration(file_path):
         pass
     return None
 
+def get_video_metadata(file_path):
+    """Get video metadata including thumbnail"""
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT * FROM video_metadata WHERE file_path = ?', (file_path,))
+    metadata = cursor.fetchone()
+    
+    if not metadata:
+        # Generate new metadata
+        thumbnail_filename = hashlib.md5(file_path.encode()).hexdigest() + '.jpg'
+        thumbnail_path = os.path.join(THUMBNAILS_FOLDER, thumbnail_filename)
+        
+        # Generate thumbnail
+        thumbnail_url = generate_thumbnail(file_path, thumbnail_path)
+        
+        # Get file size and duration
+        try:
+            full_path = os.path.join(UPLOAD_FOLDER, file_path)
+            file_size = os.path.getsize(full_path)
+            duration = get_video_duration(file_path)
+        except:
+            file_size = 0
+            duration = None
+        
+        # Insert metadata
+        cursor.execute('''
+            INSERT INTO video_metadata (file_path, thumbnail_path, file_size, duration)
+            VALUES (?, ?, ?, ?)
+        ''', (file_path, thumbnail_url, file_size, duration))
+        
+        conn.commit()
+        metadata = (cursor.lastrowid, file_path, thumbnail_url, duration, None, file_size, datetime.now())
+    
+    conn.close()
+    return metadata
+
 def scan_directory_recursive(directory_path, base_path='', sort_by='name', sort_order='asc'):
     """Recursively scan directory for media files with metadata and sorting"""
     items = []
@@ -325,272 +362,6 @@ def sort_items(items, sort_by='name', sort_order='asc'):
     elif sort_by == 'type':
         # Sort by type: folders first, then by file type
         items.sort(key=lambda x: (x['type'] != 'folder', x['type'], x['name'].lower()), reverse=reverse)
-    
-    return items
-
-@app.route('/api/browse')
-def browse_files():
-    """Browse files and folders with sorting"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    try:
-        path = request.args.get('path', '')
-        sort_by = request.args.get('sort', 'name')  # name, size, modified, duration, type
-        sort_order = request.args.get('order', 'asc')  # asc, desc
-        
-        full_path = os.path.join(app.config['UPLOAD_FOLDER'], path) if path else app.config['UPLOAD_FOLDER']
-        
-        # Security check
-        if not os.path.abspath(full_path).startswith(os.path.abspath(app.config['UPLOAD_FOLDER'])):
-            return jsonify({'error': 'Invalid path'}), 400
-        
-        items = scan_directory_recursive(full_path, path, sort_by, sort_order)
-        
-        return jsonify({
-            'items': items,
-            'current_path': path,
-            'parent_path': os.path.dirname(path) if path else None,
-            'sort_by': sort_by,
-            'sort_order': sort_order
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/create-user', methods=['POST'])
-def admin_create_user():
-    """Create new user (admin only)"""
-    if 'user_id' not in session or not session.get('is_admin'):
-        return jsonify({'error': 'Admin access required'}), 403
-    
-    data = request.get_json()
-    username = data.get('username')
-    password = data.get('password')
-    email = data.get('email', '')
-    is_admin = data.get('is_admin', False)
-    
-    if not username or not password:
-        return jsonify({'error': 'Username and password required'}), 400
-    
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
-    
-    # Check if user exists
-    cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-    if cursor.fetchone():
-        conn.close()
-        return jsonify({'error': 'Username already exists'}), 400
-    
-    # Create user
-    password_hash = generate_password_hash(password)
-    cursor.execute('''
-        INSERT INTO users (username, password_hash, email, is_admin, can_use_playlists, can_download, can_use_subtitles)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    ''', (username, password_hash, email, is_admin, True, True, True))
-    
-    conn.commit()
-    conn.close()
-    
-    return jsonify({'success': True, 'message': 'User created successfully'})
-
-@app.route('/api/playlists/<int:playlist_id>/play')
-def get_playlist_for_playing(playlist_id):
-    """Get playlist with full video details for playing"""
-    if 'user_id' not in session:
-        return jsonify({'error': 'Authentication required'}), 401
-    
-    if not check_user_permissions(session['user_id'], 'can_use_playlists'):
-        return jsonify({'error': 'Playlist access denied'}), 403
-    
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT id, name, description, videos
-        FROM playlists WHERE id = ? AND user_id = ?
-    ''', (playlist_id, session['user_id']))
-    
-    playlist = cursor.fetchone()
-    conn.close()
-    
-    if not playlist:
-        return jsonify({'error': 'Playlist not found'}), 404
-    
-    video_paths = json.loads(playlist[3]) if playlist[3] else []
-    detailed_videos = []
-    
-    for video_path in video_paths:
-        try:
-            full_path = os.path.join(app.config['UPLOAD_FOLDER'], video_path)
-            if os.path.exists(full_path):
-                file_size = os.path.getsize(full_path)
-                metadata = get_video_metadata(video_path)
-                
-                video_info = {
-                    'name': os.path.basename(video_path),
-                    'path': video_path,
-                    'url': f'/static/videos/{video_path.replace(os.sep, "/")}',
-                    'size': file_size,
-                    'thumbnail': metadata[2] if metadata else None,
-                    'duration': metadata[3] if metadata else None,
-                    'type': get_file_type(video_path)
-                }
-                detailed_videos.append(video_info)
-        except:
-            continue
-    
-    return jsonify({
-        'playlist': {
-            'id': playlist[0],
-            'name': playlist[1],
-            'description': playlist[2],
-            'videos': detailed_videos
-        }
-    })
-
-            
-            # FFmpeg command to extract frame at 55 seconds
-            cmd = [
-                'ffmpeg', '-i', full_video_path,
-                '-ss', '00:00:55',  # Seek to 55 seconds
-                '-vframes', '1',    # Extract 1 frame
-                '-q:v', '2',        # High quality
-                '-y',               # Overwrite output file
-                thumbnail_path
-            ]
-            
-            # Run ffmpeg command
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            
-            if result.returncode == 0 and os.path.exists(thumbnail_path):
-                # Return relative path for web access
-                return f"/static/thumbnails/{os.path.basename(thumbnail_path)}"
-            else:
-                # If ffmpeg fails, try at 10 seconds
-                cmd[3] = '00:00:10'
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-                
-                if result.returncode == 0 and os.path.exists(thumbnail_path):
-                    return f"/static/thumbnails/{os.path.basename(thumbnail_path)}"
-                else:
-                    return create_placeholder_thumbnail(thumbnail_path)
-        except (subprocess.TimeoutExpired, FileNotFoundError):
-            # FFmpeg not available or timeout, use placeholder
-            return create_placeholder_thumbnail(thumbnail_path)
-            
-    except Exception as e:
-        print(f"Error generating thumbnail: {e}")
-        return create_placeholder_thumbnail(thumbnail_path)
-
-def create_placeholder_thumbnail(thumbnail_path):
-    """Create a simple placeholder thumbnail"""
-    try:
-        # Create a simple SVG placeholder
-        svg_content = '''
-        <svg width="320" height="180" xmlns="http://www.w3.org/2000/svg">
-            <rect width="100%" height="100%" fill="#333"/>
-            <text x="50%" y="50%" text-anchor="middle" dy=".3em" fill="white" font-family="Arial" font-size="24">
-                🎬
-            </text>
-        </svg>
-        '''
-        
-        # Convert SVG to base64 data URL
-        svg_b64 = base64.b64encode(svg_content.encode()).decode()
-        return f"data:image/svg+xml;base64,{svg_b64}"
-    except Exception as e:
-        print(f"Error creating placeholder: {e}")
-        return None
-
-def get_video_metadata(file_path):
-    """Get video metadata including thumbnail"""
-    conn = sqlite3.connect(DATABASE_FILE)
-    cursor = conn.cursor()
-    
-    cursor.execute('SELECT * FROM video_metadata WHERE file_path = ?', (file_path,))
-    metadata = cursor.fetchone()
-    
-    if not metadata:
-        # Generate new metadata
-        thumbnail_filename = hashlib.md5(file_path.encode()).hexdigest() + '.jpg'
-        thumbnail_path = os.path.join(THUMBNAILS_FOLDER, thumbnail_filename)
-        
-        # Generate thumbnail
-        thumbnail_url = generate_thumbnail(file_path, thumbnail_path)
-        
-        # Get file size
-        try:
-            full_path = os.path.join(UPLOAD_FOLDER, file_path)
-            file_size = os.path.getsize(full_path)
-            
-            # Try to get video duration using ffprobe
-            try:
-                import subprocess
-                cmd = [
-                    'ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
-                    '-of', 'csv=p=0', full_path
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-                duration = float(result.stdout.strip()) if result.returncode == 0 else None
-            except:
-                duration = None
-        except:
-            file_size = 0
-            duration = None
-        
-        # Insert metadata
-        cursor.execute('''
-            INSERT INTO video_metadata (file_path, thumbnail_path, file_size, duration)
-            VALUES (?, ?, ?, ?)
-        ''', (file_path, thumbnail_url, file_size, duration))
-        
-        conn.commit()
-        metadata = (cursor.lastrowid, file_path, thumbnail_url, duration, None, file_size, datetime.now())
-    
-    conn.close()
-    return metadata
-
-def scan_directory_recursive(directory_path, base_path=''):
-    """Recursively scan directory for media files with metadata"""
-    items = []
-    
-    try:
-        if not os.path.exists(directory_path):
-            return items
-            
-        for item in sorted(os.listdir(directory_path)):
-            item_path = os.path.join(directory_path, item)
-            relative_path = os.path.join(base_path, item) if base_path else item
-            
-            if os.path.isdir(item_path):
-                # It's a directory
-                folder_info = {
-                    'name': item,
-                    'type': 'folder',
-                    'path': relative_path,
-                    'full_path': item_path,
-                    'children': scan_directory_recursive(item_path, relative_path)
-                }
-                items.append(folder_info)
-            elif allowed_file(item):
-                # It's a media file
-                file_size = os.path.getsize(item_path)
-                metadata = get_video_metadata(relative_path)
-                
-                file_info = {
-                    'name': item,
-                    'type': get_file_type(item),
-                    'path': relative_path,
-                    'full_path': item_path,
-                    'url': f'/static/videos/{relative_path.replace(os.sep, "/")}',
-                    'size': file_size,
-                    'thumbnail': metadata[2] if metadata else None,
-                    'duration': metadata[3] if metadata else None,
-                    'resolution': metadata[4] if metadata else None
-                }
-                items.append(file_info)
-    except PermissionError:
-        pass
     
     return items
 
@@ -787,6 +558,42 @@ def get_all_users():
     conn.close()
     return jsonify({'users': users})
 
+@app.route('/api/admin/create-user', methods=['POST'])
+def admin_create_user():
+    """Create new user (admin only)"""
+    if 'user_id' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Admin access required'}), 403
+    
+    data = request.get_json()
+    username = data.get('username')
+    password = data.get('password')
+    email = data.get('email', '')
+    is_admin = data.get('is_admin', False)
+    
+    if not username or not password:
+        return jsonify({'error': 'Username and password required'}), 400
+    
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    
+    # Check if user exists
+    cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
+    if cursor.fetchone():
+        conn.close()
+        return jsonify({'error': 'Username already exists'}), 400
+    
+    # Create user
+    password_hash = generate_password_hash(password)
+    cursor.execute('''
+        INSERT INTO users (username, password_hash, email, is_admin, can_use_playlists, can_download, can_use_subtitles)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (username, password_hash, email, is_admin, True, True, True))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'success': True, 'message': 'User created successfully'})
+
 @app.route('/api/admin/users/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
     """Delete user (admin only)"""
@@ -939,10 +746,10 @@ def get_system_info():
     if 'user_id' not in session or not session.get('is_admin'):
         return jsonify({'error': 'Admin access required'}), 403
     
-    import psutil
-    import platform
-    
     try:
+        import psutil
+        import platform
+        
         # System info
         system_info = {
             'platform': platform.system(),
@@ -998,24 +805,29 @@ def get_user_permissions():
 
 @app.route('/api/browse')
 def browse_files():
-    """Browse files and folders"""
+    """Browse files and folders with sorting"""
     if 'user_id' not in session:
         return jsonify({'error': 'Authentication required'}), 401
     
     try:
         path = request.args.get('path', '')
+        sort_by = request.args.get('sort', 'name')  # name, size, modified, duration, type
+        sort_order = request.args.get('order', 'asc')  # asc, desc
+        
         full_path = os.path.join(app.config['UPLOAD_FOLDER'], path) if path else app.config['UPLOAD_FOLDER']
         
         # Security check
         if not os.path.abspath(full_path).startswith(os.path.abspath(app.config['UPLOAD_FOLDER'])):
             return jsonify({'error': 'Invalid path'}), 400
         
-        items = scan_directory_recursive(full_path, path)
+        items = scan_directory_recursive(full_path, path, sort_by, sort_order)
         
         return jsonify({
             'items': items,
             'current_path': path,
-            'parent_path': os.path.dirname(path) if path else None
+            'parent_path': os.path.dirname(path) if path else None,
+            'sort_by': sort_by,
+            'sort_order': sort_order
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1199,6 +1011,61 @@ def delete_playlist(playlist_id):
     conn.close()
     
     return jsonify({'success': True})
+
+@app.route('/api/playlists/<int:playlist_id>/play')
+def get_playlist_for_playing(playlist_id):
+    """Get playlist with full video details for playing"""
+    if 'user_id' not in session:
+        return jsonify({'error': 'Authentication required'}), 401
+    
+    if not check_user_permissions(session['user_id'], 'can_use_playlists'):
+        return jsonify({'error': 'Playlist access denied'}), 403
+    
+    conn = sqlite3.connect(DATABASE_FILE)
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        SELECT id, name, description, videos
+        FROM playlists WHERE id = ? AND user_id = ?
+    ''', (playlist_id, session['user_id']))
+    
+    playlist = cursor.fetchone()
+    conn.close()
+    
+    if not playlist:
+        return jsonify({'error': 'Playlist not found'}), 404
+    
+    video_paths = json.loads(playlist[3]) if playlist[3] else []
+    detailed_videos = []
+    
+    for video_path in video_paths:
+        try:
+            full_path = os.path.join(app.config['UPLOAD_FOLDER'], video_path)
+            if os.path.exists(full_path):
+                file_size = os.path.getsize(full_path)
+                metadata = get_video_metadata(video_path)
+                
+                video_info = {
+                    'name': os.path.basename(video_path),
+                    'path': video_path,
+                    'url': f'/static/videos/{video_path.replace(os.sep, "/")}',
+                    'size': file_size,
+                    'thumbnail': metadata[2] if metadata else None,
+                    'duration': metadata[3] if metadata else None,
+                    'type': get_file_type(video_path)
+                }
+                detailed_videos.append(video_info)
+        except:
+            continue
+    
+    return jsonify({
+        'playlist': {
+            'id': playlist[0],
+            'name': playlist[1],
+            'description': playlist[2],
+            'videos': detailed_videos
+        }
+    })
 
 # Subtitle routes
 @app.route('/api/subtitles/<path:video_path>')

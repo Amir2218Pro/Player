@@ -5,7 +5,6 @@ let currentPlaylistIndex = -1;
 let allVideos = [];
 let playlists = [];
 let currentPath = '';
-let searchResults = [];
 let isSearching = false;
 let controlsTimeout;
 let isControlsVisible = true;
@@ -35,7 +34,6 @@ const videoPath = document.getElementById('videoPath');
 const fileList = document.getElementById('fileList');
 const breadcrumb = document.getElementById('breadcrumb');
 const searchInput = document.getElementById('searchInput');
-const searchResults = document.getElementById('searchResults');
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
@@ -44,10 +42,12 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeSearch();
     initializeKeyboardShortcuts();
     loadFiles();
+    addSortControls();
     
     // Initialize playlists if user has permission
     if (permissions.can_use_playlists) {
         loadPlaylists();
+        initializePlaylistModals();
     }
 });
 
@@ -184,6 +184,24 @@ function seekVideo(e) {
     videoPlayer.currentTime = percent * videoPlayer.duration;
 }
 
+function startProgressDrag(e) {
+    e.preventDefault();
+    const rect = progressBar.getBoundingClientRect();
+    
+    function onMouseMove(e) {
+        const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        videoPlayer.currentTime = percent * videoPlayer.duration;
+    }
+    
+    function onMouseUp() {
+        document.removeEventListener('mousemove', onMouseMove);
+        document.removeEventListener('mouseup', onMouseUp);
+    }
+    
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+}
+
 function updateProgress() {
     if (videoPlayer.duration) {
         const percent = (videoPlayer.currentTime / videoPlayer.duration) * 100;
@@ -311,6 +329,12 @@ function handleVideoEnd() {
     playNext();
 }
 
+function downloadCurrentVideo() {
+    if (currentVideo && permissions.can_download) {
+        window.open(`/api/download/${currentVideo.path}`, '_blank');
+    }
+}
+
 // File browser
 async function loadFiles(path = '', sortBy = null, sortOrder = null) {
     try {
@@ -406,9 +430,17 @@ function renderFiles(items) {
     }).join('');
 }
 
+function downloadFile(filePath) {
+    if (permissions.can_download) {
+        window.open(`/api/download/${filePath}`, '_blank');
+    }
+}
+
 // File sorting
 function addSortControls() {
     const browserHeader = document.querySelector('.file-browser-header');
+    if (!browserHeader) return;
+    
     const sortControls = document.createElement('div');
     sortControls.className = 'sort-controls';
     sortControls.innerHTML = `
@@ -591,9 +623,77 @@ async function loadPlaylists() {
     }
 }
 
+function initializePlaylistModals() {
+    // Playlist modal close buttons
+    document.getElementById('playlistModalClose').addEventListener('click', () => {
+        document.getElementById('playlistModal').style.display = 'none';
+    });
+    
+    document.getElementById('addToPlaylistModalClose').addEventListener('click', () => {
+        document.getElementById('addToPlaylistModal').style.display = 'none';
+    });
+    
+    document.getElementById('createPlaylistModalClose').addEventListener('click', () => {
+        document.getElementById('createPlaylistModal').style.display = 'none';
+    });
+    
+    // Create playlist button
+    document.getElementById('createPlaylistBtn').addEventListener('click', () => {
+        document.getElementById('playlistModal').style.display = 'none';
+        document.getElementById('createPlaylistModal').style.display = 'flex';
+    });
+    
+    // Cancel create playlist
+    document.getElementById('cancelCreatePlaylist').addEventListener('click', () => {
+        document.getElementById('createPlaylistModal').style.display = 'none';
+        document.getElementById('playlistModal').style.display = 'flex';
+    });
+    
+    // Create playlist form
+    document.getElementById('createPlaylistForm').addEventListener('submit', handleCreatePlaylist);
+}
+
+async function handleCreatePlaylist(e) {
+    e.preventDefault();
+    
+    const name = document.getElementById('playlistName').value;
+    const description = document.getElementById('playlistDescription').value;
+    
+    try {
+        const response = await fetch('/api/playlists', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ name, description })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showNotification('Playlist created successfully', 'success');
+            document.getElementById('createPlaylistModal').style.display = 'none';
+            document.getElementById('playlistName').value = '';
+            document.getElementById('playlistDescription').value = '';
+            loadPlaylists();
+        } else {
+            showNotification(data.error || 'Failed to create playlist', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error', 'error');
+    }
+}
+
 function showPlaylistModal() {
     document.getElementById('playlistModal').style.display = 'flex';
     renderPlaylists();
+}
+
+function showAddToPlaylistModal() {
+    if (currentVideo) {
+        document.getElementById('addToPlaylistModal').style.display = 'flex';
+        renderPlaylistSelection();
+    }
 }
 
 function renderPlaylists() {
@@ -617,9 +717,6 @@ function renderPlaylists() {
                     <button class="playlist-action" onclick="playPlaylist(${playlist.id})" title="Play">
                         <i class="fas fa-play"></i>
                     </button>
-                    <button class="playlist-action" onclick="editPlaylist(${playlist.id})" title="Edit">
-                        <i class="fas fa-edit"></i>
-                    </button>
                     <button class="playlist-action" onclick="deletePlaylist(${playlist.id})" title="Delete">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -627,6 +724,30 @@ function renderPlaylists() {
             </div>
             <div class="playlist-meta">${playlist.videos.length} videos</div>
             ${playlist.description ? `<div class="playlist-description">${playlist.description}</div>` : ''}
+        </div>
+    `).join('');
+}
+
+function renderPlaylistSelection() {
+    const playlistSelection = document.getElementById('playlistSelection');
+    
+    if (playlists.length === 0) {
+        playlistSelection.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-list"></i>
+                <p>No playlists found</p>
+            </div>
+        `;
+        return;
+    }
+    
+    playlistSelection.innerHTML = playlists.map(playlist => `
+        <div class="playlist-select-item" onclick="addVideoToPlaylist(${playlist.id})">
+            <div>
+                <div class="playlist-name">${playlist.name}</div>
+                <div class="playlist-meta">${playlist.videos.length} videos</div>
+            </div>
+            <i class="fas fa-plus"></i>
         </div>
     `).join('');
 }
@@ -653,6 +774,64 @@ async function playPlaylist(playlistId) {
         }
     } catch (error) {
         showNotification('Failed to load playlist', 'error');
+    }
+}
+
+async function deletePlaylist(playlistId) {
+    if (confirm('Are you sure you want to delete this playlist?')) {
+        try {
+            const response = await fetch(`/api/playlists/${playlistId}`, {
+                method: 'DELETE'
+            });
+            
+            if (response.ok) {
+                showNotification('Playlist deleted successfully', 'success');
+                loadPlaylists();
+                renderPlaylists();
+            } else {
+                showNotification('Failed to delete playlist', 'error');
+            }
+        } catch (error) {
+            showNotification('Network error', 'error');
+        }
+    }
+}
+
+async function addVideoToPlaylist(playlistId) {
+    if (!currentVideo) return;
+    
+    try {
+        const playlist = playlists.find(p => p.id === playlistId);
+        if (!playlist) return;
+        
+        // Add video to playlist
+        const updatedVideos = [...playlist.videos, currentVideo.path];
+        
+        const response = await fetch(`/api/playlists/${playlistId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ videos: updatedVideos })
+        });
+        
+        if (response.ok) {
+            showNotification('Video added to playlist', 'success');
+            document.getElementById('addToPlaylistModal').style.display = 'none';
+            loadPlaylists();
+        } else {
+            showNotification('Failed to add video to playlist', 'error');
+        }
+    } catch (error) {
+        showNotification('Network error', 'error');
+    }
+}
+
+function addToPlaylist(filePath) {
+    const videoInfo = allVideos.find(v => v.path === filePath);
+    if (videoInfo) {
+        currentVideo = videoInfo;
+        showAddToPlaylistModal();
     }
 }
 
@@ -714,13 +893,6 @@ function renderPlaylistVideos(videos) {
                     ${video.duration ? `<span class="playlist-video-duration">${formatTime(video.duration)}</span>` : ''}
                 </div>
             </div>
-            <div class="playlist-video-actions">
-                <button class="playlist-video-action remove" 
-                        onclick="event.stopPropagation(); removeFromPlaylist(${index})" 
-                        title="Remove">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
         </div>
     `).join('');
 }
@@ -746,6 +918,30 @@ function hidePlaylistViewer() {
     }
     currentPlaylist = null;
     currentPlaylistIndex = -1;
+}
+
+// Subtitle functionality
+async function loadSubtitles(videoPath) {
+    if (!permissions.can_use_subtitles) return;
+    
+    try {
+        const response = await fetch(`/api/subtitles/${videoPath}`);
+        const data = await response.json();
+        
+        if (response.ok && data.subtitles.length > 0) {
+            // Add subtitles to video player
+            data.subtitles.forEach(subtitle => {
+                const track = document.createElement('track');
+                track.kind = 'subtitles';
+                track.src = subtitle.url;
+                track.srclang = subtitle.language;
+                track.label = subtitle.name;
+                videoPlayer.appendChild(track);
+            });
+        }
+    } catch (error) {
+        console.error('Failed to load subtitles:', error);
+    }
 }
 
 // Utility functions
@@ -782,10 +978,12 @@ function getFileIcon(type) {
 
 function showLoading(show) {
     const loadingOverlay = document.getElementById('loadingOverlay');
-    if (show) {
-        loadingOverlay.classList.add('show');
-    } else {
-        loadingOverlay.classList.remove('show');
+    if (loadingOverlay) {
+        if (show) {
+            loadingOverlay.classList.add('show');
+        } else {
+            loadingOverlay.classList.remove('show');
+        }
     }
 }
 
@@ -947,9 +1145,4 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
     } catch (error) {
         window.location.href = '/login';
     }
-});
-
-// Initialize sort controls when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-    setTimeout(addSortControls, 100);
 });
